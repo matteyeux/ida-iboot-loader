@@ -3,20 +3,18 @@ import idaapi
 import ida_idaapi
 import ida_search
 import ida_funcs
-import ida_segment
 import ida_bytes
 import ida_idp
-import ida_pro
-import ida_auto
 import idc
-import struct
 
 PROLOGUES = ["7F 23 03 D5", "BD A9", "BF A9"]
 
 
 def set_name_from_str_xref(base_addr, name, string):
     """Set function name based on a string xref."""
-    string_offset = ida_search.find_text(base_addr, 1, 1, string, ida_search.SEARCH_DOWN)
+    string_offset = ida_search.find_text(
+        base_addr, 1, 1, string, ida_search.SEARCH_DOWN
+    )
     if string_offset == ida_idaapi.BADADDR:
         return ida_idaapi.BADADDR
 
@@ -35,7 +33,9 @@ def set_name_from_str_xref(base_addr, name, string):
 
 def set_name_from_pattern_xref(base_addr, end, name, pattern):
     """Set function name based on a specific bytes pattern."""
-    pattern_offset = ida_search.find_binary(base_addr, end, pattern, 16, ida_search.SEARCH_DOWN)
+    pattern_offset = ida_search.find_binary(
+        base_addr, end, pattern, 16, ida_search.SEARCH_DOWN
+    )
     if pattern_offset == ida_idaapi.BADADDR or pattern_offset is None:
         return ida_idaapi.BADADDR
 
@@ -71,11 +71,11 @@ def accept_file(fd, fname):
     fd.seek(0x200)
     image_type = fd.read(0x30).decode()
 
-    if image_type[:5] == 'iBoot' or image_type[:4] == ('iBEC' or 'iBSS'):
-        return {"format" : "iBoot (AArch64)", "processor" : "arm"}
+    if image_type[:5] == "iBoot" or image_type[:4] == ("iBEC" or "iBSS"):
+        return {"format": "iBoot (AArch64)", "processor": "arm"}
 
-    if image_type[:9] == ('SecureROM' or 'AVPBooter'):
-        return {"format" : "SecureROM (AArch64)", "processor" : "arm"}
+    if image_type[:9] == ("SecureROM" or "AVPBooter"):
+        return {"format": "SecureROM (AArch64)", "processor": "arm"}
     return 0
 
 
@@ -94,7 +94,7 @@ def load_file(fd, neflags, format):
     size = fd.tell()
 
     segm = idaapi.segment_t()
-    segm.bitness = 2 # 64-bit
+    segm.bitness = 2  # 64-bit
     segm.start_ea = 0
     segm.end_ea = size
 
@@ -123,7 +123,9 @@ def load_file(fd, neflags, format):
 
     for prologue in PROLOGUES:
         while addr != ida_idaapi.BADADDR:
-            addr = ida_search.find_binary(addr, segment_end, prologue, 16, ida_search.SEARCH_DOWN)
+            addr = ida_search.find_binary(
+                addr, segment_end, prologue, 16, ida_search.SEARCH_DOWN
+            )
             if addr != ida_idaapi.BADADDR:
                 if len(prologue) < 8:
                     addr = addr - 2
@@ -135,7 +137,9 @@ def load_file(fd, neflags, format):
     idc.plan_and_wait(base_addr, segment_end)
 
     # find IMG4 string as byte
-    set_name_from_pattern_xref(base_addr, segment_end, "_image4_get_partial", "49 4d 47 34")
+    set_name_from_pattern_xref(
+        base_addr, segment_end, "_image4_get_partial", "49 4d 47 34"
+    )
 
     set_name_from_str_xref(base_addr, "_do_printf", "<null>")
     set_name_from_str_xref(base_addr, "_panic", "double panic in")
@@ -144,37 +148,38 @@ def load_file(fd, neflags, format):
     set_name_from_str_xref(base_addr, "_UpdateDeviceTree", "fuse-revision")
     set_name_from_str_xref(base_addr, "_main_task", "debug-uarts")
     set_name_from_str_xref(base_addr, "_platform_init_display", "backlight-level")
-    set_name_from_str_xref(base_addr, '_do_printf', '<null>')
-    set_name_from_str_xref(base_addr, '_do_memboot', 'Combo image too large\n')
-    set_name_from_str_xref(base_addr, '_do_go', 'Memory image not valid')
+    set_name_from_str_xref(base_addr, "_do_printf", "<null>")
+    set_name_from_str_xref(base_addr, "_do_memboot", "Combo image too large\n")
+    set_name_from_str_xref(base_addr, "_do_go", "Memory image not valid")
     set_name_from_str_xref(base_addr, "_task_init", "idle task")
-    set_name_from_str_xref(base_addr, 
-        '_sys_setup_default_environment',
-        '/System/Library/Caches/com.apple.kernelcaches/kernelcache',
+    set_name_from_str_xref(
+        base_addr,
+        "_sys_setup_default_environment",
+        "/System/Library/Caches/com.apple.kernelcaches/kernelcache",
     )
-    set_name_from_str_xref(base_addr,
-        '_check_autoboot', 'aborting autoboot due to user intervention.\n'
+    set_name_from_str_xref(
+        base_addr, "_check_autoboot", "aborting autoboot due to user intervention.\n"
     )
-    set_name_from_str_xref(base_addr,
-        '_do_setpict', 'picture too large, size:%zu\n'
+    set_name_from_str_xref(base_addr, "_do_setpict", "picture too large, size:%zu\n")
+    set_name_from_str_xref(
+        base_addr, "_arm_exception_abort", "ARM %s abort at 0x%016llx:\n"
     )
-    set_name_from_str_xref(base_addr,
-        '_arm_exception_abort', 'ARM %s abort at 0x%016llx:\n'
+    set_name_from_str_xref(base_addr, "_do_devicetree", "Device Tree image not valid\n")
+    set_name_from_str_xref(base_addr, "_do_ramdisk", "Ramdisk image not valid\n")
+    set_name_from_str_xref(
+        base_addr,
+        "_nvme_bdev_create",
+        "Couldn't construct blockdev for namespace %d",
     )
-    set_name_from_str_xref(base_addr,
-        '_do_devicetree', 'Device Tree image not valid\n'
-    )
-    set_name_from_str_xref(base_addr,'_do_ramdisk', 'Ramdisk image not valid\n')
-    set_name_from_str_xref(base_addr,
-        '_nvme_bdev_create',
-        'Couldn\'t construct blockdev for namespace %d',
-    )
-    set_name_from_str_xref(base_addr,
-        '_image4_dump_list',
-        'image %p: bdev %p type %c%c%c%c offset 0x%llx',
+    set_name_from_str_xref(
+        base_addr,
+        "_image4_dump_list",
+        "image %p: bdev %p type %c%c%c%c offset 0x%llx",
     )
 
-    usb_vendor_id = set_name_from_pattern_xref(base_addr, segment_end, "_platform_get_usb_vendor_id", "80 b5 80 52")
+    usb_vendor_id = set_name_from_pattern_xref(
+        base_addr, segment_end, "_platform_get_usb_vendor_id", "80 b5 80 52"
+    )
     usb_core_init = set_name_from_func_xref(base_addr, "_usb_core_init", usb_vendor_id)
     set_name_from_func_xref(base_addr, "_usb_init_with_controller", usb_core_init)
 
