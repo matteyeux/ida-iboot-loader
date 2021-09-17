@@ -71,10 +71,10 @@ def accept_file(fd, fname):
     fd.seek(0x200)
     image_type = fd.read(0x30).decode()
 
-    if image_type[:5] == 'iBoot' or image_type[:4] in ['iBEC', 'iBSS']:
+    if image_type[:5] == "iBoot" or image_type[:4] in ["iBEC", "iBSS"]:
         return {"format": "iBoot (AArch64)", "processor": "arm"}
 
-    if image_type[:9] in ['SecureROM', 'AVPBooter']:
+    if image_type[:9] in ["SecureROM", "AVPBooter"]:
         return {"format": "SecureROM (AArch64)", "processor": "arm"}
     return 0
 
@@ -149,7 +149,7 @@ def load_file(fd, neflags, format):
     set_name_from_str_xref(base_addr, "_main_task", "debug-uarts")
     set_name_from_str_xref(base_addr, "_platform_init_display", "backlight-level")
     set_name_from_str_xref(base_addr, "_do_printf", "<null>")
-    set_name_from_str_xref(base_addr, "_do_memboot", "Combo image too large\n")
+    set_name_from_str_xref(base_addr, "_do_memboot", "Combo image too large")
     set_name_from_str_xref(base_addr, "_do_go", "Memory image not valid")
     set_name_from_str_xref(base_addr, "_task_init", "idle task")
     set_name_from_str_xref(
@@ -158,23 +158,43 @@ def load_file(fd, neflags, format):
         "/System/Library/Caches/com.apple.kernelcaches/kernelcache",
     )
     set_name_from_str_xref(
-        base_addr, "_check_autoboot", "aborting autoboot due to user intervention.\n"
+        base_addr, "_check_autoboot", "aborting autoboot due to user intervention."
     )
-    set_name_from_str_xref(base_addr, "_do_setpict", "picture too large, size:%zu\n")
+    set_name_from_str_xref(base_addr, "_do_setpict", "picture too large, size:%zu")
     set_name_from_str_xref(
-        base_addr, "_arm_exception_abort", "ARM %s abort at 0x%016llx:\n"
+        base_addr, "_arm_exception_abort", "ARM %s abort at 0x%016llx:"
     )
-    set_name_from_str_xref(base_addr, "_do_devicetree", "Device Tree image not valid\n")
-    set_name_from_str_xref(base_addr, "_do_ramdisk", "Ramdisk image not valid\n")
+    set_name_from_str_xref(base_addr, "_do_devicetree", "Device Tree image not valid")
+    set_name_from_str_xref(base_addr, "_do_ramdisk", "Ramdisk image not valid")
     set_name_from_str_xref(
         base_addr,
         "_nvme_bdev_create",
         "Couldn't construct blockdev for namespace %d",
     )
+    set_name_from_str_xref(base_addr, "_record_memory_range", "chosen/memory-map")
+    set_name_from_str_xref(base_addr, "_boot_upgrade_system", "/boot/kernelcache")
+    img4_register = set_name_from_str_xref(
+        base_addr,
+        "_image4_register_property_capture_callbacks",
+        "image4_register_property_capture_callbacks",
+    )
+    set_name_from_func_xref(base_addr, "_target_init_boot_manifest", img4_register)
+
+    set_name_from_str_xref(
+        base_addr, "_target_pass_boot_manifest", "chosen/manifest-properties"
+    )
+
+    # found this one only in A12-A14-15.0 iBoot.
     set_name_from_str_xref(
         base_addr,
-        "_image4_dump_list",
-        "image %p: bdev %p type %c%c%c%c offset 0x%llx",
+        "_image4_validate_property_callback_interposer",
+        "Unknown ASN1 type %llu",
+    )
+    set_name_from_str_xref(
+        base_addr, "_platform_handoff_update_devicetree", "iboot-handoff"
+    )
+    set_name_from_str_xref(
+        base_addr, "_prepare_and_jump", "======== End of %s serial output. ========"
     )
 
     usb_vendor_id = set_name_from_pattern_xref(
