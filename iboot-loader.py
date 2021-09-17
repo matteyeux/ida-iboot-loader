@@ -71,10 +71,10 @@ def accept_file(fd, fname):
     fd.seek(0x200)
     image_type = fd.read(0x30).decode()
 
-    if image_type[:5] == "iBoot" or image_type[:4] == ("iBEC" or "iBSS"):
+    if image_type[:5] == 'iBoot' or image_type[:4] in ['iBEC', 'iBSS']:
         return {"format": "iBoot (AArch64)", "processor": "arm"}
 
-    if image_type[:9] == ("SecureROM" or "AVPBooter"):
+    if image_type[:9] in ['SecureROM', 'AVPBooter']:
         return {"format": "SecureROM (AArch64)", "processor": "arm"}
     return 0
 
