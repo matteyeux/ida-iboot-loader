@@ -9,7 +9,6 @@ import idc
 
 PROLOGUES = ["7F 23 03 D5", "BD A9", "BF A9"]
 
-
 def set_name_from_str_xref(base_addr, name, string):
     """Set function name based on a string xref."""
     string_offset = ida_search.find_text(
@@ -66,6 +65,62 @@ def set_name_from_func_xref(base_addr, name, function_addr):
     return function.start_ea
 
 
+def set_name_on_xref_asserts():
+    """In A12+ dev iBoots we have strings like 'ASSERT (%s:%d)\n'
+    at xref_addr-8 you can find the name of the function used by assert. Eg:
+    ADR             X0, aArchTaskFreeSt ; "arch_task_free_stack"
+    NOP
+    ADR             X1, aAssertSD ; "ASSERT (%s:%d)\n"
+    """
+    functions_list = []
+    assert_str = idc.get_name_ea_simple("aAssertSD")
+    xrefs = idautils.XrefsTo(assert_str)
+    for xref in xrefs:
+        addr = xref.frm
+        function = ida_funcs.get_func(xref.frm)
+        if function is None or "sub_" not in ida_funcs.get_func_name(xref.frm):
+            continue
+
+        expected_nop = idc.print_insn_mnem(addr - 4)
+        dis = idc.GetDisasm(addr - 8)
+        #print(expected_nop, hex(addr - 4))
+        if expected_nop == 'NOP' and ("X0, a" in dis and "#0" not in dis[-2:]):
+            name = dis.split()[-1].replace('"', '')
+            # if name already exists, continue
+            if f"_{name}" in functions_list:
+                continue
+            print(f"[+] _{name} : {hex(function.start_ea)}")
+            idc.set_name(function.start_ea, f"_{name}")
+            functions_list.append(f"_{name}")
+
+
+def set_name_on_xref_panics(panic):
+    """Same as previous function but for panic xrefs."""
+    xrefs = idautils.XrefsTo(panic)
+    functions_list = []
+    for xref in xrefs:
+        addr = xref.frm
+        function = ida_funcs.get_func(xref.frm)
+        if function is None or "sub_" not in ida_funcs.get_func_name(xref.frm):
+            continue
+
+        expected_nop = idc.print_insn_mnem(addr - 4)
+        dis = idc.GetDisasm(addr - 16)
+        if expected_nop == 'NOP' and ("X0, a" in dis and "#0" not in dis[-2:]):
+            # if we have a line like this : "ADR X0, aPlatformQuiesc"
+            # it returns "aPlatformQuiesc"
+            operand = idc.print_operand(addr - 16, 1)
+            string_name_addr = idc.get_name_ea_simple(operand)
+            name = idc.get_strlit_contents(string_name_addr).decode()
+
+            if f"_{name}" in functions_list:
+                continue
+
+            print(f"[+] _{name} : {hex(function.start_ea)}")
+            idc.set_name(function.start_ea, f"_{name}", idc.SN_CHECK)
+            functions_list.append(f"_{name}")
+
+
 def accept_file(fd, fname):
     """Make sure file is valid."""
     fd.seek(0x200)
@@ -77,6 +132,29 @@ def accept_file(fd, fname):
     if image_type[:9] in ["SecureROM", "AVPBooter"]:
         return {"format": "SecureROM (AArch64)", "processor": "arm"}
     return 0
+
+
+def is_bootrom(fd) -> bool:
+    """Check if image is rom type. Purely aesthetic."""
+    fd.seek(0x200)
+    image_type = fd.read(0x30).decode()
+    if image_type[:9] in ["SecureROM", "AVPBooter"]:
+        return True
+    return False
+
+
+def is_bootloader_release(fd) -> [bool, str]:
+    """Check if bootloader is type release."""
+    tags = [b'RELEASE',  b'ROMRELEASE', b'RESEARCH_RELEASE', b'DEBUG', b'DEVELOPMENT']
+    fd.seek(0x240)
+    data = fd.read(16)
+    for tag in tags:
+        data_ = data[:len(tag)]
+        if data_ == tag and data_ in tags[:3]:
+            return True, tag.decode()
+        elif data_ == tag and data not in tags[:3]:
+            return False, tag.decode()
+    return False, None
 
 
 def load_file(fd, neflags, format):
@@ -98,7 +176,13 @@ def load_file(fd, neflags, format):
     segm.start_ea = 0
     segm.end_ea = size
 
-    idaapi.add_segm_ex(segm, "iBoot", "CODE", idaapi.ADDSEG_OR_DIE)
+    if is_bootrom(fd):
+        idaapi.add_segm_ex(segm, "SecureROM", "CODE", idaapi.ADDSEG_OR_DIE)
+    else:
+        idaapi.add_segm_ex(segm, "iBoot", "CODE", idaapi.ADDSEG_OR_DIE)
+
+    bl_data = is_bootloader_release(fd)
+    print(f"[i] bootloader : {bl_data[1]}")
 
     fd.seek(0)
     fd.file2base(0, 0, size, False)
@@ -142,7 +226,7 @@ def load_file(fd, neflags, format):
     )
 
     set_name_from_str_xref(base_addr, "_do_printf", "<null>")
-    set_name_from_str_xref(base_addr, "_panic", "double panic in")
+    panic = set_name_from_str_xref(base_addr, "_panic", "double panic in")
     set_name_from_str_xref(base_addr, "_platform_get_usb_serial_number_string", "CPID:")
     set_name_from_str_xref(base_addr, "_platform_get_usb_more_other_string", " NONC:")
     set_name_from_str_xref(base_addr, "_UpdateDeviceTree", "fuse-revision")
@@ -203,4 +287,8 @@ def load_file(fd, neflags, format):
     usb_core_init = set_name_from_func_xref(base_addr, "_usb_core_init", usb_vendor_id)
     set_name_from_func_xref(base_addr, "_usb_init_with_controller", usb_core_init)
 
+    if bl_data[0] is False:
+        print("[i] looking for panic and xrefs strings...")
+        set_name_on_xref_panics(panic)
+        set_name_on_xref_asserts()
     return 1
