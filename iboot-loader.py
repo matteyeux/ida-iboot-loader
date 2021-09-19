@@ -65,14 +65,13 @@ def set_name_from_func_xref(base_addr, name, function_addr):
     return function.start_ea
 
 
-def set_name_on_xref_asserts():
+def set_name_on_xref_asserts(functions_list: list) -> list:
     """In A12+ dev iBoots we have strings like 'ASSERT (%s:%d)\n'
     at xref_addr-8 you can find the name of the function used by assert. Eg:
     ADR             X0, aArchTaskFreeSt ; "arch_task_free_stack"
     NOP
     ADR             X1, aAssertSD ; "ASSERT (%s:%d)\n"
     """
-    functions_list = []
     assert_str = idc.get_name_ea_simple("aAssertSD")
     xrefs = idautils.XrefsTo(assert_str)
     for xref in xrefs:
@@ -90,11 +89,12 @@ def set_name_on_xref_asserts():
             if f"_{name}" in functions_list:
                 continue
             print(f"[+] _{name} : {hex(function.start_ea)}")
-            idc.set_name(function.start_ea, f"_{name}")
+            idc.set_name(function.start_ea, f"_{name}") # use idc.SN_NOWARN if there are to many warnings
             functions_list.append(f"_{name}")
+    return functions_list
 
 
-def set_name_on_xref_panics(panic):
+def set_name_on_xref_panics(panic) -> list:
     """Same as previous function but for panic xrefs."""
     xrefs = idautils.XrefsTo(panic)
     functions_list = []
@@ -117,8 +117,9 @@ def set_name_on_xref_panics(panic):
                 continue
 
             print(f"[+] _{name} : {hex(function.start_ea)}")
-            idc.set_name(function.start_ea, f"_{name}", idc.SN_CHECK)
+            idc.set_name(function.start_ea, f"_{name}")
             functions_list.append(f"_{name}")
+    return functions_list
 
 
 def accept_file(fd, fname):
@@ -287,8 +288,9 @@ def load_file(fd, neflags, format):
     usb_core_init = set_name_from_func_xref(base_addr, "_usb_core_init", usb_vendor_id)
     set_name_from_func_xref(base_addr, "_usb_init_with_controller", usb_core_init)
 
+    functions = []
     if bl_data[0] is False:
         print("[i] looking for panic and xrefs strings...")
-        set_name_on_xref_panics(panic)
-        set_name_on_xref_asserts()
+        functions = set_name_on_xref_panics(panic)
+        set_name_on_xref_asserts(functions)
     return 1
