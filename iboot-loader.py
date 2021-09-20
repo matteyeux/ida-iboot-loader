@@ -125,7 +125,10 @@ def set_name_on_xref_panics(panic) -> list:
 def accept_file(fd, fname):
     """Make sure file is valid."""
     fd.seek(0x200)
-    image_type = fd.read(0x30).decode()
+    try:
+        image_type = fd.read(0x30).decode()
+    except UnicodeDecodeError:
+        return 0
 
     if image_type[:5] == "iBoot" or image_type[:4] in ["iBEC", "iBSS"]:
         return {"format": "iBoot (AArch64)", "processor": "arm"}
