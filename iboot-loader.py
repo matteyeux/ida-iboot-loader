@@ -9,6 +9,7 @@ import idc
 
 PROLOGUES = ["7F 23 03 D5", "BD A9", "BF A9"]
 
+
 def set_name_from_str_xref(base_addr, name, string):
     """Set function name based on a string xref."""
     string_offset = ida_search.find_text(
@@ -65,6 +66,36 @@ def set_name_from_func_xref(base_addr, name, function_addr):
     return function.start_ea
 
 
+def set_name_on_str_before_bl(name: str, string: str):
+    """Set name according to string before BL inst.
+    Example with printf, we look for "USB_SERIAL_NUMBER:" then find the next BL.
+    It branches to printf.
+    ADR             X0, aUsbSerialNumbe ; "::\tUSB_SERIAL_NUMBER: %s\n"
+    NOP
+    BL              sub_1800F4980 <- printf
+
+    TODO: maybe find a better name
+    """
+    string_offset = ida_search.find_text(0, 1, 1, string, ida_search.SEARCH_DOWN)
+
+    if string_offset == ida_idaapi.BADADDR:
+        return ida_idaapi.BADADDR
+
+    xref = list(idautils.XrefsTo(string_offset))
+    if len(xref) == 0:
+        return ida_idaapi.BADADDR
+
+    function = idaapi.get_func(xref[0].frm)
+    for addr in range(xref[0].frm, idc.find_func_end(function.start_ea)):
+        insn = idc.print_insn_mnem(addr)
+        if "BL" in insn:
+            function_addr = f"0x{idc.print_operand(addr, 0).split('_')[1]}"
+            function = idaapi.get_func(int(function_addr, 16))
+            print(f"[+] {name} : {hex(function.start_ea)}")
+            idc.set_name(function.start_ea, name, idc.SN_CHECK)
+            return function.start_ea
+
+
 def set_name_on_xref_asserts(functions_list: list) -> list:
     """In A12+ dev iBoots we have strings like 'ASSERT (%s:%d)\n'
     at xref_addr-8 you can find the name of the function used by assert. Eg:
@@ -82,14 +113,18 @@ def set_name_on_xref_asserts(functions_list: list) -> list:
 
         expected_nop = idc.print_insn_mnem(addr - 4)
         dis = idc.GetDisasm(addr - 8)
-        #print(expected_nop, hex(addr - 4))
-        if expected_nop == 'NOP' and ("X0, a" in dis and "#0" not in dis[-2:]):
-            name = dis.split()[-1].replace('"', '')
+        if expected_nop == "NOP" and ("X0, a" in dis and "#0" not in dis[-2:]):
+            operand = idc.print_operand(addr - 8, 1)
+            string_name_addr = idc.get_name_ea_simple(operand)
+            name = idc.get_strlit_contents(string_name_addr).decode()
+
             # if name already exists, continue
             if f"_{name}" in functions_list:
                 continue
             print(f"[+] _{name} : {hex(function.start_ea)}")
-            idc.set_name(function.start_ea, f"_{name}") # use idc.SN_NOWARN if there are to many warnings
+            idc.set_name(
+                function.start_ea, f"_{name}"
+            )  # use idc.SN_NOWARN if there are to many warnings
             functions_list.append(f"_{name}")
     return functions_list
 
@@ -106,7 +141,7 @@ def set_name_on_xref_panics(panic) -> list:
 
         expected_nop = idc.print_insn_mnem(addr - 4)
         dis = idc.GetDisasm(addr - 16)
-        if expected_nop == 'NOP' and ("X0, a" in dis and "#0" not in dis[-2:]):
+        if expected_nop == "NOP" and ("X0, a" in dis and "#0" not in dis[-2:]):
             # if we have a line like this : "ADR X0, aPlatformQuiesc"
             # it returns "aPlatformQuiesc"
             operand = idc.print_operand(addr - 16, 1)
@@ -149,11 +184,12 @@ def is_bootrom(fd) -> bool:
 
 def is_bootloader_release(fd) -> [bool, str]:
     """Check if bootloader is type release."""
-    tags = [b'RELEASE',  b'ROMRELEASE', b'RESEARCH_RELEASE', b'DEBUG', b'DEVELOPMENT']
+    tags = [b"RELEASE", b"ROMRELEASE", b"RESEARCH_RELEASE", b"DEBUG", b"DEVELOPMENT"]
     fd.seek(0x240)
     data = fd.read(16)
     for tag in tags:
-        data_ = data[:len(tag)]
+        tag_len = len(tag)
+        data_ = data[:tag_len]
         if data_ == tag and data_ in tags[:3]:
             return True, tag.decode()
         elif data_ == tag and data not in tags[:3]:
@@ -290,6 +326,9 @@ def load_file(fd, neflags, format):
     )
     usb_core_init = set_name_from_func_xref(base_addr, "_usb_core_init", usb_vendor_id)
     set_name_from_func_xref(base_addr, "_usb_init_with_controller", usb_core_init)
+
+    set_name_on_str_before_bl("_printf", "USB_SERIAL_NUMBER:")
+    set_name_on_str_before_bl("_der_expect_ia5string", "IM4P")
 
     functions = []
     if bl_data[0] is False:
