@@ -2,12 +2,18 @@
 
 IDA loader for Apple's iBoot, SecureROM and AVPBooter
 
-![Capture](https://user-images.githubusercontent.com/8758978/133671626-fa733488-ecb2-411e-9d76-691a19321a7f.PNG)
+![Capture](https://user-images.githubusercontent.com/8758978/134245891-c458bcb1-632e-445b-9ace-2e8b798cba5e.PNG)
 
 
 ### Installation
 
 Copy `iboot-loader.py` to the loaders folder in IDA directory.
+
+### Usage
+
+Open a decrypted 64 bits iBoot image or a [SecureROM](https://securerom.fun) file with IDA. IDA should ask to open with this loader.
+
+![Capture](https://user-images.githubusercontent.com/8758978/134242135-299bd5d0-cc62-44f0-8c8b-329361196942.PNG)
 
 ### Credits
 
