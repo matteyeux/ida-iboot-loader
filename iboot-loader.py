@@ -110,10 +110,8 @@ def set_name_on_xref_asserts(functions_list: list) -> list:
         function = ida_funcs.get_func(xref.frm)
         if function is None or "sub_" not in ida_funcs.get_func_name(xref.frm):
             continue
-
-        expected_nop = idc.print_insn_mnem(addr - 4)
         dis = idc.GetDisasm(addr - 8)
-        if expected_nop == "NOP" and ("X0, a" in dis and "#0" not in dis[-2:]):
+        if "X0, a" in dis:
             operand = idc.print_operand(addr - 8, 1)
             string_name_addr = idc.get_name_ea_simple(operand)
             name = idc.get_strlit_contents(string_name_addr).decode()
@@ -123,7 +121,7 @@ def set_name_on_xref_asserts(functions_list: list) -> list:
                 continue
             print(f"[+] _{name} : {hex(function.start_ea)}")
             idc.set_name(
-                function.start_ea, f"_{name}"
+                function.start_ea, f"_{name}",
             )  # use idc.SN_NOWARN if there are to many warnings
             functions_list.append(f"_{name}")
     return functions_list
