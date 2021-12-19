@@ -120,11 +120,37 @@ def set_name_on_xref_asserts(functions_list: list) -> list:
             if f"_{name}" in functions_list:
                 continue
             print(f"[+] _{name} : {hex(function.start_ea)}")
-            idc.set_name(
-                function.start_ea, f"_{name}",
-            )  # use idc.SN_NOWARN if there are to many warnings
+            idc.set_name(function.start_ea, f"_{name}", idc.SN_NOWARN)
+            # use idc.SN_NOWARN if there are to many warnings
             functions_list.append(f"_{name}")
     return functions_list
+
+
+def set_name_on_xref_heap_malloc(heap_malloc: int):
+    """Debug iBoots use heap_malloc(size_t size, const char *caller_name).
+    We can use it to get the name of the function which calls it.
+    Only tested on one debug iBoot (from A10/iOS10), it may not be 100% accurate.
+    """
+    xrefs = idautils.XrefsTo(heap_malloc)
+    for xref in xrefs:
+        addr = xref.frm
+        function = ida_funcs.get_func(addr)
+        # check that the function hasn't already a name
+        if function is None or "sub_" not in ida_funcs.get_func_name(xref.frm):
+            continue
+
+        # find the name of heap_malloc caller
+        for i in range(addr, addr - 20, -4):
+            dis = idc.GetDisasm(i)
+            if "BL" in dis and i != addr:
+                break
+
+            if "ADRX1,a" in dis.replace(" ", ""):
+                operand = idc.print_operand(i, 1)
+                string_name_addr = idc.get_name_ea_simple(operand)
+                name = idc.get_strlit_contents(string_name_addr).decode()
+                print(f"[+] _{name} : {hex(function.start_ea)}")
+                idc.set_name(function.start_ea, f"_{name}")
 
 
 def set_name_on_xref_panics(panic) -> list:
@@ -328,9 +354,16 @@ def load_file(fd, neflags, format):
     set_name_on_str_before_bl("_printf", "USB_SERIAL_NUMBER:")
     set_name_on_str_before_bl("_der_expect_ia5string", "IM4P")
 
+    heap_malloc = set_name_from_str_xref(
+        base_addr, "_heap_malloc", "heap_malloc must allocate at least one byte"
+    )
+
     functions = []
     if bl_data[0] is False:
         print("[i] looking for panic and xrefs strings...")
         functions = set_name_on_xref_panics(panic)
         set_name_on_xref_asserts(functions)
+
+        if heap_malloc != ida_idaapi.BADADDR:
+            set_name_on_xref_heap_malloc(heap_malloc)
     return 1
