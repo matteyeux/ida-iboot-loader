@@ -1,9 +1,13 @@
 # IDA iBoot Loader
 
-IDA loader for Apple's iBoot, SecureROM and AVPBooter
+IDA loader for Apple's iBoot, SecureROM and AVPBooter. 
 
 ![Capture](https://user-images.githubusercontent.com/8758978/134245891-c458bcb1-632e-445b-9ace-2e8b798cba5e.PNG)
 
+
+### Support
+
+This loader supports IDA 7.5 to IDA 8.0 SP1 and works on all Apple ARM64 bootloaders even M1+.
 
 ### Installation
 
