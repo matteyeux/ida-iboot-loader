@@ -7,7 +7,7 @@ IDA loader for Apple's iBoot, SecureROM and AVPBooter.
 
 ### Support
 
-This loader supports IDA 7.5 to IDA 8.1 and works on all Apple ARM64 bootloaders even M1+.
+This loader supports IDA 7.5 to IDA 8.2 and works on all Apple ARM64 bootloaders even M1+.
 
 ### Installation
 
