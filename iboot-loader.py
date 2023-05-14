@@ -61,6 +61,9 @@ def set_name_from_func_xref(base_addr, name, function_addr):
         return ida_idaapi.BADADDR
 
     function = ida_funcs.get_func(xref_list[0].frm)
+    if function is None:
+        return ida_idaapi.BADADDR
+
     idc.set_name(function.start_ea, name, idc.SN_CHECK)
     print(f"[+] {name} : {hex(function.start_ea)}")
     return function.start_ea
