@@ -4,6 +4,8 @@ import ida_idaapi
 import ida_search
 import ida_funcs
 import ida_bytes
+import ida_kernwin
+import ida_segment
 import ida_idp
 import idc
 
@@ -223,69 +225,14 @@ def is_bootloader_release(fd) -> [bool, str]:
             return False, tag.decode()
     return False, None
 
+def post_process(use_panic_strings: bool) -> None:
+    ida_kernwin.show_wait_box("Searching for known functions...")
 
-def load_file(fd, neflags, format):
-    """Function to load file."""
-    size = 0
-    base_addr = 0
-
-    idaapi.set_processor_type("arm", ida_idp.SETPROC_LOADER_NON_FATAL)
-    idaapi.get_inf_structure().lflags |= idaapi.LFLG_64BIT
-
-    if (neflags & idaapi.NEF_RELOAD) != 0:
-        return 1
-
-    fd.seek(0, idaapi.SEEK_END)
-    size = fd.tell()
-
-    segm = idaapi.segment_t()
-    segm.bitness = 2  # 64-bit
-    segm.start_ea = 0
-    segm.end_ea = size
-
-    if is_bootrom(fd):
-        idaapi.add_segm_ex(segm, "SecureROM", "CODE", idaapi.ADDSEG_OR_DIE)
-    else:
-        idaapi.add_segm_ex(segm, "iBoot", "CODE", idaapi.ADDSEG_OR_DIE)
-
-    bl_data = is_bootloader_release(fd)
-    print(f"[i] bootloader : {bl_data[1]}")
-
-    fd.seek(0)
-    fd.file2base(0, 0, size, False)
-
-    idaapi.add_entry(0, 0, "start", 1)
-    ida_funcs.add_func(0)
-
-    for addr in range(0, 0x200, 4):
-        insn = idc.print_insn_mnem(addr)
-        if "LDR" in insn:
-            base_str = idc.print_operand(addr, 1)
-            base_addr = int(base_str.split("=")[1], 16)
-            break
-
-    if base_addr == 0:
-        print("[!] Failed to find base address, it's now set to 0x0")
-
-    print(f"[+] Rebasing to address {hex(base_addr)}")
-    idaapi.rebase_program(base_addr, idc.MSF_NOFIX)
-
-    segment_end = idc.get_segm_attr(base_addr, idc.SEGATTR_END)
-
-    for prologue in PROLOGUES:
-        while addr != ida_idaapi.BADADDR:
-            addr = ida_search.find_binary(
-                addr, segment_end, prologue, 16, ida_search.SEARCH_DOWN
-            )
-            if addr != ida_idaapi.BADADDR:
-                if len(prologue) < 8:
-                    addr = addr - 2
-
-                if (addr % 4) == 0 and ida_bytes.get_full_flags(addr) < 0x200:
-                    ida_funcs.add_func(addr)
-                addr += 4
-
-    idc.plan_and_wait(base_addr, segment_end)
+    # The loader only creates one segment, so we can easily get that segment
+    # and its bounds like this.
+    main_segm = ida_segment.get_first_seg()
+    base_addr = main_segm.start_ea
+    segment_end = main_segm.end_ea
 
     # find IMG4 string as byte
     set_name_from_pattern_xref(
@@ -361,12 +308,98 @@ def load_file(fd, neflags, format):
         base_addr, "_heap_malloc", "heap_malloc must allocate at least one byte"
     )
 
+    ida_kernwin.replace_wait_box("Analyzing panic strings...")
+
     functions = []
-    if bl_data[0] is False:
+    if use_panic_strings:
         print("[i] looking for panic and xrefs strings...")
         functions = set_name_on_xref_panics(panic)
         set_name_on_xref_asserts(functions)
 
         if heap_malloc != ida_idaapi.BADADDR:
             set_name_on_xref_heap_malloc(heap_malloc)
+
+
+    ida_kernwin.hide_wait_box()
+
+
+class post_processing_hook_t(ida_idp.IDB_Hooks):
+    use_panic_strings: bool
+
+    def __init__(self, use_panic_strings: bool = False):
+        super().__init__()
+        self.use_panic_strings = use_panic_strings
+
+    def auto_empty_finally(self, *args):
+        post_process(self.use_panic_strings)
+
+
+POST_PROCESS_HOOK = None
+
+def load_file(fd, neflags, format):
+    """Function to load file."""
+    size = 0
+    base_addr = 0
+
+    idaapi.set_processor_type("arm", ida_idp.SETPROC_LOADER_NON_FATAL)
+    idaapi.get_inf_structure().lflags |= idaapi.LFLG_64BIT
+
+    if (neflags & idaapi.NEF_RELOAD) != 0:
+        return 1
+
+    fd.seek(0, idaapi.SEEK_END)
+    size = fd.tell()
+
+    segm = idaapi.segment_t()
+    segm.bitness = 2  # 64-bit
+    segm.start_ea = 0
+    segm.end_ea = size
+
+    if is_bootrom(fd):
+        idaapi.add_segm_ex(segm, "SecureROM", "CODE", idaapi.ADDSEG_OR_DIE)
+    else:
+        idaapi.add_segm_ex(segm, "iBoot", "CODE", idaapi.ADDSEG_OR_DIE)
+
+    bl_data = is_bootloader_release(fd)
+    print(f"[i] bootloader : {bl_data[1]}")
+
+    global POST_PROCESS_HOOK
+    POST_PROCESS_HOOK = post_processing_hook_t(bl_data[0] == False)
+    POST_PROCESS_HOOK.hook()
+
+    fd.seek(0)
+    fd.file2base(0, 0, size, False)
+
+    idaapi.add_entry(0, 0, "start", 1)
+    ida_funcs.add_func(0)
+
+    for addr in range(0, 0x200, 4):
+        insn = idc.print_insn_mnem(addr)
+        if "LDR" in insn:
+            base_str = idc.print_operand(addr, 1)
+            base_addr = int(base_str.split("=")[1], 16)
+            break
+
+    if base_addr == 0:
+        print("[!] Failed to find base address, it's now set to 0x0")
+
+    print(f"[+] Rebasing to address {hex(base_addr)}")
+    idaapi.rebase_program(base_addr, idc.MSF_NOFIX)
+
+    segment_end = idc.get_segm_attr(base_addr, idc.SEGATTR_END)
+
+    for prologue in PROLOGUES:
+        while addr != ida_idaapi.BADADDR:
+            addr = ida_search.find_binary(
+                addr, segment_end, prologue, 16, ida_search.SEARCH_DOWN
+            )
+            if addr != ida_idaapi.BADADDR:
+                if len(prologue) < 8:
+                    addr = addr - 2
+
+                if (addr % 4) == 0 and ida_bytes.get_full_flags(addr) < 0x200:
+                    ida_funcs.add_func(addr)
+                addr += 4
+
+
     return 1
