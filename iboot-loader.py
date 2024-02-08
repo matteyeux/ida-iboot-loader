@@ -4,6 +4,8 @@ import ida_idaapi
 import ida_search
 import ida_funcs
 import ida_bytes
+import ida_kernwin
+import ida_segment
 import ida_idp
 import idc
 
@@ -109,6 +111,9 @@ def set_name_on_xref_asserts(functions_list: list) -> list:
     assert_str = idc.get_name_ea_simple("aAssertSD")
     xrefs = idautils.XrefsTo(assert_str)
     for xref in xrefs:
+        if ida_kernwin.user_cancelled():
+            break
+
         addr = xref.frm
         function = ida_funcs.get_func(xref.frm)
         if function is None or "sub_" not in ida_funcs.get_func_name(xref.frm):
@@ -136,6 +141,9 @@ def set_name_on_xref_heap_malloc(heap_malloc: int):
     """
     xrefs = idautils.XrefsTo(heap_malloc)
     for xref in xrefs:
+        if ida_kernwin.user_cancelled():
+            break
+
         addr = xref.frm
         function = ida_funcs.get_func(addr)
         # check that the function hasn't already a name
@@ -161,6 +169,9 @@ def set_name_on_xref_panics(panic) -> list:
     xrefs = idautils.XrefsTo(panic)
     functions_list = []
     for xref in xrefs:
+        if ida_kernwin.user_cancelled():
+            break
+
         addr = xref.frm
         function = ida_funcs.get_func(xref.frm)
         if function is None or "sub_" not in ida_funcs.get_func_name(xref.frm):
@@ -223,6 +234,104 @@ def is_bootloader_release(fd) -> [bool, str]:
             return False, tag.decode()
     return False, None
 
+BASIC_STR_XREFS = {
+     "_do_printf": "<null>",
+    "_platform_get_usb_serial_number_string": "CPID:",
+    "_platform_get_usb_more_other_string": " NONC:",
+    "_UpdateDeviceTree": "fuse-revision",
+    "_main_task": "debug-uarts",
+    "_platform_init_display": "backlight-level",
+    "_do_printf": "<null>",
+    "_do_memboot": "Combo image too large",
+    "_do_go": "Memory image not valid",
+    "_task_init": "idle task",
+    "_sys_setup_default_environment": "/System/Library/Caches/com.apple.kernelcaches/kernelcache",
+    "_check_autoboot": "aborting autoboot due to user intervention.",
+    "_do_setpict": "picture too large: size:%zu",
+    "_arm_exception_abort": "ARM %s abort at 0x%016llx:",
+    "_do_devicetree": "Device Tree image not valid",
+    "_do_ramdisk": "Ramdisk image not valid",
+    "_nvme_bdev_create": "Couldn't construct blockdev for namespace %d",
+    "_record_memory_range": "chosen/memory-map",
+    "_boot_upgrade_system": "/boot/kernelcache",
+    "_target_pass_boot_manifest": "chosen/manifest-properties",
+    "_image4_validate_property_callback_interposer": "Unknown ASN1 type %llu",
+    "_platform_handoff_update_devicetree": "iboot-handoff",
+    "_prepare_and_jump": "======== End of %s serial output. ========",
+}
+
+def post_process(use_panic_strings: bool) -> None:
+    prompt = "Autoanalysis is complete.\n\nDo you want to search for known iBoot functions?"
+    if ida_kernwin.ask_yn(ida_kernwin.ASKBTN_YES, prompt) != ida_kernwin.ASKBTN_YES:
+        return
+
+    # The loader only creates one segment, so we can easily get that segment
+    # and its bounds like this.
+    main_segm = ida_segment.get_first_seg()
+    base_addr = main_segm.start_ea
+    segment_end = main_segm.end_ea
+
+    ida_kernwin.show_wait_box("Searching for known functions...")
+
+    # find IMG4 string as byte
+    set_name_from_pattern_xref(base_addr, segment_end, "_image4_get_partial", "49 4d 47 34")
+
+    panic = set_name_from_str_xref(base_addr, "_panic", "double panic in")
+    heap_malloc = set_name_from_str_xref(base_addr, "_heap_malloc", "heap_malloc must allocate at least one byte")
+    img4_register = set_name_from_str_xref(base_addr, "_image4_register_property_capture_callbacks", "image4_register_property_capture_callbacks")
+
+    # Handle the bulk of the basic string-to-name patterns in a loop for both
+    # organizational purposes and the ability to cancel the operation while it
+    # is in progress.
+    i = 0
+    count = len(BASIC_STR_XREFS)
+    for name, string in BASIC_STR_XREFS.items():
+        if ida_kernwin.user_cancelled():
+            ida_kernwin.hide_wait_box()
+            return
+
+        i += 1
+        ida_kernwin.replace_wait_box(f"Analyzing basic string references... ({i}/{count})")
+
+        set_name_from_str_xref(base_addr, name, string)
+
+    # If the user wants to cancel here, they will just have to suffer...
+    usb_vendor_id = set_name_from_pattern_xref(base_addr, segment_end, "_platform_get_usb_vendor_id", "80 b5 80 52")
+    usb_core_init = set_name_from_func_xref(base_addr, "_usb_core_init", usb_vendor_id)
+    set_name_from_func_xref(base_addr, "_usb_init_with_controller", usb_core_init)
+    set_name_from_func_xref(base_addr, "_target_init_boot_manifest", img4_register)
+
+    set_name_on_str_before_bl("_printf", "USB_SERIAL_NUMBER:")
+    set_name_on_str_before_bl("_der_expect_ia5string", "IM4P")
+
+    functions = []
+    if use_panic_strings:
+        ida_kernwin.replace_wait_box("Analyzing panic strings...")
+
+        # All of these functions below check for the "user cancelled" signal
+        # inside and will return early accordingly.
+        functions = set_name_on_xref_panics(panic)
+        set_name_on_xref_asserts(functions)
+
+        if heap_malloc != ida_idaapi.BADADDR:
+            set_name_on_xref_heap_malloc(heap_malloc)
+
+
+    ida_kernwin.hide_wait_box()
+
+
+class post_processing_hook_t(ida_idp.IDB_Hooks):
+    use_panic_strings: bool
+
+    def __init__(self, use_panic_strings: bool = False):
+        super().__init__()
+        self.use_panic_strings = use_panic_strings
+
+    def auto_empty_finally(self, *args):
+        post_process(self.use_panic_strings)
+
+
+POST_PROCESS_HOOK = None
 
 def load_file(fd, neflags, format):
     """Function to load file."""
@@ -250,6 +359,10 @@ def load_file(fd, neflags, format):
 
     bl_data = is_bootloader_release(fd)
     print(f"[i] bootloader : {bl_data[1]}")
+
+    global POST_PROCESS_HOOK
+    POST_PROCESS_HOOK = post_processing_hook_t(bl_data[0] == False)
+    POST_PROCESS_HOOK.hook()
 
     fd.seek(0)
     fd.file2base(0, 0, size, False)
@@ -285,88 +398,5 @@ def load_file(fd, neflags, format):
                     ida_funcs.add_func(addr)
                 addr += 4
 
-    idc.plan_and_wait(base_addr, segment_end)
 
-    # find IMG4 string as byte
-    set_name_from_pattern_xref(
-        base_addr, segment_end, "_image4_get_partial", "49 4d 47 34"
-    )
-
-    set_name_from_str_xref(base_addr, "_do_printf", "<null>")
-    panic = set_name_from_str_xref(base_addr, "_panic", "double panic in")
-    set_name_from_str_xref(base_addr, "_platform_get_usb_serial_number_string", "CPID:")
-    set_name_from_str_xref(base_addr, "_platform_get_usb_more_other_string", " NONC:")
-    set_name_from_str_xref(base_addr, "_UpdateDeviceTree", "fuse-revision")
-    set_name_from_str_xref(base_addr, "_main_task", "debug-uarts")
-    set_name_from_str_xref(base_addr, "_platform_init_display", "backlight-level")
-    set_name_from_str_xref(base_addr, "_do_printf", "<null>")
-    set_name_from_str_xref(base_addr, "_do_memboot", "Combo image too large")
-    set_name_from_str_xref(base_addr, "_do_go", "Memory image not valid")
-    set_name_from_str_xref(base_addr, "_task_init", "idle task")
-    set_name_from_str_xref(
-        base_addr,
-        "_sys_setup_default_environment",
-        "/System/Library/Caches/com.apple.kernelcaches/kernelcache",
-    )
-    set_name_from_str_xref(
-        base_addr, "_check_autoboot", "aborting autoboot due to user intervention."
-    )
-    set_name_from_str_xref(base_addr, "_do_setpict", "picture too large, size:%zu")
-    set_name_from_str_xref(
-        base_addr, "_arm_exception_abort", "ARM %s abort at 0x%016llx:"
-    )
-    set_name_from_str_xref(base_addr, "_do_devicetree", "Device Tree image not valid")
-    set_name_from_str_xref(base_addr, "_do_ramdisk", "Ramdisk image not valid")
-    set_name_from_str_xref(
-        base_addr,
-        "_nvme_bdev_create",
-        "Couldn't construct blockdev for namespace %d",
-    )
-    set_name_from_str_xref(base_addr, "_record_memory_range", "chosen/memory-map")
-    set_name_from_str_xref(base_addr, "_boot_upgrade_system", "/boot/kernelcache")
-    img4_register = set_name_from_str_xref(
-        base_addr,
-        "_image4_register_property_capture_callbacks",
-        "image4_register_property_capture_callbacks",
-    )
-    set_name_from_func_xref(base_addr, "_target_init_boot_manifest", img4_register)
-
-    set_name_from_str_xref(
-        base_addr, "_target_pass_boot_manifest", "chosen/manifest-properties"
-    )
-
-    # found this one only in A12-A14-15.0 iBoot.
-    set_name_from_str_xref(
-        base_addr,
-        "_image4_validate_property_callback_interposer",
-        "Unknown ASN1 type %llu",
-    )
-    set_name_from_str_xref(
-        base_addr, "_platform_handoff_update_devicetree", "iboot-handoff"
-    )
-    set_name_from_str_xref(
-        base_addr, "_prepare_and_jump", "======== End of %s serial output. ========"
-    )
-
-    usb_vendor_id = set_name_from_pattern_xref(
-        base_addr, segment_end, "_platform_get_usb_vendor_id", "80 b5 80 52"
-    )
-    usb_core_init = set_name_from_func_xref(base_addr, "_usb_core_init", usb_vendor_id)
-    set_name_from_func_xref(base_addr, "_usb_init_with_controller", usb_core_init)
-
-    set_name_on_str_before_bl("_printf", "USB_SERIAL_NUMBER:")
-    set_name_on_str_before_bl("_der_expect_ia5string", "IM4P")
-
-    heap_malloc = set_name_from_str_xref(
-        base_addr, "_heap_malloc", "heap_malloc must allocate at least one byte"
-    )
-
-    functions = []
-    if bl_data[0] is False:
-        print("[i] looking for panic and xrefs strings...")
-        functions = set_name_on_xref_panics(panic)
-        set_name_on_xref_asserts(functions)
-
-        if heap_malloc != ida_idaapi.BADADDR:
-            set_name_on_xref_heap_malloc(heap_malloc)
     return 1
