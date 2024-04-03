@@ -368,10 +368,9 @@ def load_file(fd, neflags, format):
     fd.file2base(0, 0, size, False)
 
     idaapi.add_entry(0, 0, "start", 1)
-    ida_funcs.add_func(0)
 
     for addr in range(0, 0x200, 4):
-        insn = idc.print_insn_mnem(addr)
+        insn = idc.GetDisasm(addr)
         if "LDR" in insn:
             base_str = idc.print_operand(addr, 1)
             base_addr = int(base_str.split("=")[1], 16)
@@ -397,6 +396,4 @@ def load_file(fd, neflags, format):
                 if (addr % 4) == 0 and ida_bytes.get_full_flags(addr) < 0x200:
                     ida_funcs.add_func(addr)
                 addr += 4
-
-
     return 1
