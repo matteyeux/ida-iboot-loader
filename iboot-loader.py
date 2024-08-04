@@ -202,6 +202,10 @@ def accept_file(fd, fname):
         image_type = fd.read(0x30).decode()
     except UnicodeDecodeError:
         return 0
+    except AttributeError:
+        # When file is small, IDA will report error
+        # AttributeError: 'NoneType' object has no attribute 'decode'
+        return 0
 
     if image_type[:5] == "iBoot" or image_type[:4] in ["iBEC", "iBSS"]:
         return {"format": "iBoot (AArch64)", "processor": "arm"}
