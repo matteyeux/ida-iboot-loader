@@ -238,8 +238,9 @@ def is_bootloader_release(fd) -> [bool, str]:
             return False, tag.decode()
     return False, None
 
+
 BASIC_STR_XREFS = {
-     "_do_printf": "<null>",
+    "_do_printf": "<null>",
     "_platform_get_usb_serial_number_string": "CPID:",
     "_platform_get_usb_more_other_string": " NONC:",
     "_UpdateDeviceTree": "fuse-revision",
@@ -264,8 +265,11 @@ BASIC_STR_XREFS = {
     "_prepare_and_jump": "======== End of %s serial output. ========",
 }
 
+
 def post_process(use_panic_strings: bool) -> None:
-    prompt = "Autoanalysis is complete.\n\nDo you want to search for known iBoot functions?"
+    prompt = (
+        "Autoanalysis is complete.\n\nDo you want to search for known iBoot functions?"
+    )
     if ida_kernwin.ask_yn(ida_kernwin.ASKBTN_YES, prompt) != ida_kernwin.ASKBTN_YES:
         return
 
@@ -278,11 +282,19 @@ def post_process(use_panic_strings: bool) -> None:
     ida_kernwin.show_wait_box("Searching for known functions...")
 
     # find IMG4 string as byte
-    set_name_from_pattern_xref(base_addr, segment_end, "_image4_get_partial", "49 4d 47 34")
+    set_name_from_pattern_xref(
+        base_addr, segment_end, "_image4_get_partial", "49 4d 47 34"
+    )
 
     panic = set_name_from_str_xref(base_addr, "_panic", "double panic in")
-    heap_malloc = set_name_from_str_xref(base_addr, "_heap_malloc", "heap_malloc must allocate at least one byte")
-    img4_register = set_name_from_str_xref(base_addr, "_image4_register_property_capture_callbacks", "image4_register_property_capture_callbacks")
+    heap_malloc = set_name_from_str_xref(
+        base_addr, "_heap_malloc", "heap_malloc must allocate at least one byte"
+    )
+    img4_register = set_name_from_str_xref(
+        base_addr,
+        "_image4_register_property_capture_callbacks",
+        "image4_register_property_capture_callbacks",
+    )
 
     # Handle the bulk of the basic string-to-name patterns in a loop for both
     # organizational purposes and the ability to cancel the operation while it
@@ -295,12 +307,16 @@ def post_process(use_panic_strings: bool) -> None:
             return
 
         i += 1
-        ida_kernwin.replace_wait_box(f"Analyzing basic string references... ({i}/{count})")
+        ida_kernwin.replace_wait_box(
+            f"Analyzing basic string references... ({i}/{count})"
+        )
 
         set_name_from_str_xref(base_addr, name, string)
 
     # If the user wants to cancel here, they will just have to suffer...
-    usb_vendor_id = set_name_from_pattern_xref(base_addr, segment_end, "_platform_get_usb_vendor_id", "80 b5 80 52")
+    usb_vendor_id = set_name_from_pattern_xref(
+        base_addr, segment_end, "_platform_get_usb_vendor_id", "80 b5 80 52"
+    )
     usb_core_init = set_name_from_func_xref(base_addr, "_usb_core_init", usb_vendor_id)
     set_name_from_func_xref(base_addr, "_usb_init_with_controller", usb_core_init)
     set_name_from_func_xref(base_addr, "_target_init_boot_manifest", img4_register)
@@ -320,7 +336,6 @@ def post_process(use_panic_strings: bool) -> None:
         if heap_malloc != ida_idaapi.BADADDR:
             set_name_on_xref_heap_malloc(heap_malloc)
 
-
     ida_kernwin.hide_wait_box()
 
 
@@ -336,6 +351,7 @@ class post_processing_hook_t(ida_idp.IDB_Hooks):
 
 
 POST_PROCESS_HOOK = None
+
 
 def load_file(fd, neflags, format):
     """Function to load file."""
