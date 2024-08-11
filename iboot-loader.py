@@ -35,9 +35,7 @@ def set_name_from_str_xref(base_addr, name, string):
 
 def set_name_from_pattern_xref(base_addr, end, name, pattern):
     """Set function name based on a specific bytes pattern."""
-    pattern_offset = ida_search.find_binary(
-        base_addr, end, pattern, 16, ida_search.SEARCH_DOWN
-    )
+    pattern_offset = ida_bytes.find_bytes(pattern, base_addr)
     if pattern_offset == ida_idaapi.BADADDR or pattern_offset is None:
         return ida_idaapi.BADADDR
 
@@ -359,7 +357,7 @@ def load_file(fd, neflags, format):
     base_addr = 0
 
     idaapi.set_processor_type("arm", ida_idp.SETPROC_LOADER_NON_FATAL)
-    idaapi.get_inf_structure().lflags |= idaapi.LFLG_64BIT
+    idc.set_inf_attr(idc.INF_LFLAGS, idc.get_inf_attr(idc.INF_LFLAGS) | idc.LFLG_64BIT)
 
     if (neflags & idaapi.NEF_RELOAD) != 0:
         return 1
@@ -406,9 +404,7 @@ def load_file(fd, neflags, format):
 
     for prologue in PROLOGUES:
         while addr != ida_idaapi.BADADDR:
-            addr = ida_search.find_binary(
-                addr, segment_end, prologue, 16, ida_search.SEARCH_DOWN
-            )
+            addr = ida_bytes.find_bytes(prologue, addr)
             if addr != ida_idaapi.BADADDR:
                 if len(prologue) < 8:
                     addr = addr - 2
