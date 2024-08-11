@@ -11,7 +11,14 @@ This loader supports IDA 7.5 to IDA 8.4 and works on all Apple ARM64 bootloaders
 
 ### Installation
 
-Copy `iboot-loader.py` to the loaders folder in IDA directory.
+Copy the plugin file `iboot-loader.py` to your user plugins directory:
+
+OS      | User Plugins Directory
+--------|-------------------------------------
+Windows | `%APPDATA%\Hex-Rays\IDA Pro\plugins`
+Linux   | `~/.idapro/plugins`
+macOS   | `~/.idapro/plugins`
+
 
 ### Usage
 
