@@ -15,9 +15,9 @@ Copy the plugin file `iboot-loader.py` to your user plugins directory:
 
 OS      | User Plugins Directory
 --------|-------------------------------------
-Windows | `%APPDATA%\Hex-Rays\IDA Pro\plugins`
-Linux   | `~/.idapro/plugins`
-macOS   | `~/.idapro/plugins`
+Windows | `%APPDATA%\Hex-Rays\IDA Pro\loaders`
+Linux   | `~/.idapro/loaders`
+macOS   | `~/.idapro/loaders`
 
 
 ### Usage
